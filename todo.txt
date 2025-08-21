@@ -1,0 +1,157 @@
+- a & b genere une paires de clefs publique/privée (crypto asymetrique) je les appelerai IK
+- il echange leurs clefs publique avec le server.
+- quand a veut communiquer avec b, il demande ca clefs publique au serveur
+- a genere une nouvelle paires de clefs privé/publique ephemeres
+
+- a grace a la clefs publique de B, sa propre clefs privé et la clef privé ephemeres, A grace a l 'algo de Hellman genere un master secret
+- ce master secret permet a A via une fonction de derivation de generer une rootkey et 2 chain_key (une pour a une pour B), ceci permet d'encrypter/decrypter selon l'algo  du double ratchet
+
+-la rootkey de A est utilisé pour gennere une messagekey, et une nouvelle chainkey (systeme du clciket qui avance d'un cran mais ne peut revenir en arriere)
+ la messagekey est utilsé pour crypter le message de facon symetrique (AES)
+
+ - A quand a envoie son message , il inclue dans l'entete , ca clefs publique ephemere
+ - le message est envoyé a B, qui n'a pas encore allumer son pc...
+ - A envoie un deuxieme message , il utilise la chainkey_2 pour generer une messagekey_2 et une chainKey_3 (syteme du clicket)
+ - le server recoit le dexieme message encrypté..
+
+ - B allume son PC, il recoit les messages de A:
+ - B recit egalement du server la clef publique de A, ansi que la clef publique ephemere de A, qu il utilise avec ca propre clef prive pour generrer un master secret
+ - B utilise des clefs differents de A mais obtient le meme Master secret, (enchange diffie Hellman)
+ - B avec son mastere secret genere(derive) une root_key et une chain_key 
+ - B applique la fonction KDF sur la chian_key pour obtenir un message_key , regenere une chain_key2 .... (clicket)
+ - si un attaquant obtient une message_key il ne pourra lire que un message(pas avant ou apres), 
+ - si un attaquant obtient une chain_key, il ne pourra pas lire les message precedent(clciket), mais il pourrait reussir a generre les prochaine chain_key et lire les futures messages..
+ - b utilise maintenat la clef publique ephemere de A, et genere egalement un pair de clef publique/privée ephemere
+- B utilise ca clef privé et la clef publique de A (D.Hellman) pour fabriquer un secret
+
+- ce secret + la root_key actuel est utilisé pour genrere une nouvelle root_key & chain_key pour B.
+ 
+- B repond a A, il inclut dans la req ca clef publique ephemere et A recoit le message + clef publique + clefs publiques ephemere ...
+- et A recommence le procces.....
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  Algorithme de Communication Double Ratchet
+
+  Acteurs :
+   * Alice (A) : L'initiatrice de la conversation.
+   * Bob (B) : Le destinataire.
+   * Serveur : Un simple relais qui stocke les clés publiques et transmet les messages chiffrés. Il n'a jamais accès aux clés privées ni au
+     contenu des messages.
+
+  Phase 1 : Préparation (Une seule fois par utilisateur)
+
+   1. Génération des Clés d'Identité (IK) :
+       * Alice et Bob génèrent chacun une paire de clés publique/privée à long terme. Ce sont leurs clés d'identité : IK_a (privée) et IK_A
+         (publique) pour Alice ; IK_b (privée) et IK_B (publique) pour Bob.
+
+   2. Enregistrement sur le Serveur :
+       * Alice et Bob envoient leurs clés publiques d'identité (IK_A et IK_B) au serveur. Le serveur les stocke et les associe à leurs
+         identifiants respectifs (numéro de téléphone, etc.).
+
+  Phase 2 : Initialisation de la Session (Premier message d'Alice à Bob)
+
+   1. Demande de Clé :
+       * Alice veut parler à Bob. Elle demande au serveur la clé publique de Bob, IK_B.
+
+   2. Génération des Clés Éphémères (EK) :
+       * Alice génère une nouvelle paire de clés éphémères (valables uniquement pour cette session) : ek_a (privée) et EK_A (publique).
+
+   3. Calcul du Premier Master Secret (DH) :
+       * Alice utilise l'algorithme d'échange de clés Diffie-Hellman pour calculer un secret partagé. Elle combine :
+           * Sa clé privée d'identité (IK_a)
+           * Sa clé privée éphémère (ek_a)
+           * La clé publique d'identité de Bob (IK_B)
+       * Le calcul est MasterSecret_1 = DH(IK_a, IK_B) + DH(ek_a, IK_B). (La combinaison est en réalité plus complexe, souvent une KDF sur la
+         concaténation des résultats, mais c'est le principe).
+
+   4. Dérivation des Clés de Session :
+       * À partir du MasterSecret_1, Alice utilise une Fonction de Dérivation de Clé (KDF) pour générer les premières clés de la session :
+           * Une RootKey (Clé Racine)
+           * Une ChainKey_sending (Clé de Chaîne d'envoi)
+
+   5. Premier "Tour de Cliquet" Symétrique :
+       * Alice applique immédiatement la KDF à sa ChainKey_sending pour obtenir deux nouvelles clés :
+           * ChainKey_sending_2
+           * MessageKey_1 (Clé de Message 1)
+       * Elle "oublie" ChainKey_sending et la remplace par ChainKey_sending_2. C'est le premier "cliquet" : on avance, on ne peut pas revenir en
+         arrière.
+
+   6. Chiffrement et Envoi du Premier Message :
+       * Alice chiffre son message avec la MessageKey_1 (chiffrement symétrique, type AES-GCM).
+       * Elle envoie au serveur un paquet contenant :
+           * Sa clé publique éphémère EK_A.
+           * Le message chiffré.
+           * Des métadonnées (ex: l'identifiant de la clé de Bob utilisée).
+
+  Phase 3 : Réception et Double Cliquet en Action
+
+   1. Réception par Bob :
+       * Bob se connecte et reçoit le premier message d'Alice via le serveur. Il reçoit EK_A et le message chiffré.
+
+   2. Calcul du Même Master Secret :
+       * Bob, de son côté, effectue le même calcul Diffie-Hellman en utilisant :
+           * Sa clé privée d'identité (IK_b)
+           * La clé publique d'identité d'Alice (IK_A, qu'il demande au serveur)
+           * La clé publique éphémère d'Alice (EK_A, reçue avec le message)
+       * Grâce à la magie de Diffie-Hellman, il obtient exactement le même `MasterSecret_1` qu'Alice.
+
+   3. Dérivation et Déchiffrement :
+       * Bob dérive la même RootKey et la même ChainKey_sending initiale.
+       * Il effectue le même "tour de cliquet" symétrique : il applique la KDF à la ChainKey_sending pour obtenir la MessageKey_1.
+       * Il utilise la MessageKey_1 pour déchiffrer le message d'Alice.
+
+   4. Le Cliquet Diffie-Hellman (Le "Deuxième" Rochet) :
+       * C'est l'étape cruciale. Avant de répondre, Bob fait avancer le rochet asymétrique.
+       * Il génère sa propre nouvelle paire de clés éphémères : ek_b (privée) et EK_B (publique).
+       * Il calcule un nouveau MasterSecret_2 en utilisant DH(ek_b, EK_A).
+       * Il utilise ce MasterSecret_2 pour dériver une nouvelle RootKey et une nouvelle ChainKey_sending pour sa réponse.
+
+   5. Réponse de Bob :
+       * Bob fait avancer son cliquet symétrique (KDF sur sa ChainKey_sending) pour obtenir une MessageKey_2.
+       * Il chiffre sa réponse avec MessageKey_2.
+       * Il envoie à Alice sa réponse chiffrée, accompagnée de sa nouvelle clé publique éphémère EK_B.
+
+  Phase 4 : Continuation de la Conversation
+
+   1. Réception par Alice :
+       * Alice reçoit la réponse de Bob et sa nouvelle clé publique éphémère EK_B.
+       * Elle utilise EK_B et sa propre clé privée éphémère ek_a pour calculer le même MasterSecret_2 que Bob.
+       * Elle dérive les mêmes clés et déchiffre le message.
+
+   2. Le Cycle Continue :
+       * À chaque fois qu'un utilisateur envoie un message, il fait avancer son cliquet symétrique (KDF) pour générer une nouvelle clé de message.
+       * À chaque fois qu'un utilisateur reçoit un message contenant une nouvelle clé publique éphémère, il l'utilise pour faire avancer le
+         cliquet Diffie-Hellman, ce qui met à jour la RootKey.
+
+  ---
+
+  Garanties de Sécurité Obtenues
+
+   * Confidentialité persistante (Forward Secrecy) : Si un attaquant vole les clés d'une session à un instant T, il ne peut pas déchiffrer les
+     messages passés. Le cliquet symétrique a "oublié" les anciennes clés de message.
+   * Sécurité post-compromission (Future Secrecy / Self-Healing) : Si un attaquant vole les clés à l'instant T, il ne pourra lire que les messages
+     échangés jusqu'à la prochaine mise à jour par le cliquet Diffie-Hellman. Dès qu'Alice ou Bob envoie une nouvelle clé éphémère, une nouvelle
+     RootKey est générée, et l'attaquant est "éjecté" de la conversation, incapable de déchiffrer les messages futurs.
+   * Déni plausible : Les messages sont signés avec des clés de session temporaires, ce qui rend difficile de prouver de manière irréfutable qu'un
+     utilisateur est bien l'auteur d'un message.
