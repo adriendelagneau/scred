@@ -57,7 +57,7 @@ export const deriveSharedSecret = async (
   return crypto.subtle.deriveKey(
     {
       name: "ECDH",
-      publicKey: publicKey,
+      public: publicKey, // Corrected property name
     },
     privateKey,
     {
