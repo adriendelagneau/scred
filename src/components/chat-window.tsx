@@ -48,6 +48,7 @@ export default function ChatWindow({ peerUser, onBack }: ChatWindowProps) {
         console.log("INITIAL ROOT KEY (Shared Secret):", sharedSecret1);
         console.log("This key should be identical for both you and", peerUser.name);
 
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       } catch (err: any) {
         setStatus(`Error: ${err.message}`);
         console.error(err);

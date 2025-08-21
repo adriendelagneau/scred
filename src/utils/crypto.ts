@@ -86,7 +86,7 @@ export const encryptMessage = async (
   );
 
   return {
-    iv: arrayBufferToBase64(iv),
+    iv: arrayBufferToBase64(iv.buffer),
     ciphertext: arrayBufferToBase64(ciphertext),
   };
 };
