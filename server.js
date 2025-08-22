@@ -3,7 +3,11 @@
 const { createServer } = require("http");
 const { Server } = require("socket.io");
 
-const httpServer = createServer();
+// Crée un serveur HTTP qui peut répondre aux "health checks" de Render
+const httpServer = createServer((req, res) => {
+  res.writeHead(200, { "Content-Type": "text/plain" });
+  res.end("Health check OK");
+});
 
 // L'URL de votre client Next.js. Utilise une variable d'environnement pour la production.
 const clientURL = process.env.CLIENT_URL || "http://localhost:3000";
