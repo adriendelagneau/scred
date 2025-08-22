@@ -42,6 +42,8 @@ io.on("connection", (socket) => {
 });
 
 const PORT = process.env.PORT || 3001;
-httpServer.listen(PORT, () => {
+
+// Écoute sur 0.0.0.0 pour être accessible depuis l'extérieur du conteneur
+httpServer.listen(PORT, "0.0.0.0", () => {
   console.log(`Serveur Socket.IO écoute sur le port ${PORT}`);
 });
