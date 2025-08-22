@@ -3,51 +3,68 @@
 import { useEffect, useState } from 'react';
 import { ChatUser } from './user-list';
 import { getIdentityKey } from '@/lib/idb';
-import { importPublicKey, deriveSharedSecret, generateIdentityKeyPair } from '@/utils/crypto';
+import {
+  importPublicKey,
+  deriveSharedSecret,
+  generateIdentityKeyPair,
+  deriveKeysFromRoot,
+  encryptMessage,
+  decryptMessage,
+} from '@/utils/crypto';
 
 interface ChatWindowProps {
   peerUser: ChatUser;
   onBack: () => void;
 }
 
+interface Message {
+  id: number;
+  text: string;
+  sender: 'me' | 'peer';
+}
+
+// This will represent our symmetric ratchet state
+interface RatchetState {
+  chainKey: CryptoKey;
+  messageKey: CryptoKey;
+  messageCount: number;
+}
+
 export default function ChatWindow({ peerUser, onBack }: ChatWindowProps) {
-  const [rootKey, setRootKey] = useState<CryptoKey | null>(null);
+  const [ratchetState, setRatchetState] = useState<RatchetState | null>(null);
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [newMessage, setNewMessage] = useState('');
   const [status, setStatus] = useState('Initializing secure session...');
 
   useEffect(() => {
     const initializeSession = async () => {
       try {
-        // 1. Get our own private identity key from IndexedDB
         const myIdentityKeyPair = await getIdentityKey('identityKey');
-        if (!myIdentityKeyPair) {
-          throw new Error("Could not find your own identity key. Please reload.");
-        }
-        setStatus('Your identity key loaded.');
+        if (!myIdentityKeyPair) throw new Error("Could not find your own identity key.");
 
-        // 2. Import the peer's public identity key
-        if (!peerUser.identityKey?.publicKey) {
-          throw new Error("Peer user does not have a public key.");
-        }
+        if (!peerUser.identityKey?.publicKey) throw new Error("Peer user does not have a public key.");
         const peerPublicKey = await importPublicKey(peerUser.identityKey.publicKey);
-        setStatus("Peer's public key loaded.");
 
-        // 3. Generate our ephemeral key pair for this session
         const myEphemeralKeyPair = await generateIdentityKeyPair();
-        setStatus('Ephemeral keys generated.');
 
-        // 4. Perform DH calculations to establish the shared secret (Master Secret)
-        // This is a simplified version of the X3DH key agreement protocol.
-        const sharedSecret1 = await deriveSharedSecret(myIdentityKeyPair.privateKey, peerPublicKey);
-        const sharedSecret2 = await deriveSharedSecret(myEphemeralKeyPair.privateKey, peerPublicKey);
-        
-        // In a real implementation, we would combine these secrets using a KDF.
-        // For now, we'll just use the first one as our initial Root Key.
-        setRootKey(sharedSecret1);
+
+        const sharedSecretBits = await deriveSharedSecret(myIdentityKeyPair.privateKey, peerPublicKey);
+
+        const rootKey = await crypto.subtle.importKey(
+          "raw",
+          sharedSecretBits,
+          { name: "HKDF" },
+          false,
+          ["deriveBits"]
+        );
+
+        setStatus('Root key established.');
+
+        // ** NEW: Derive first chain and message keys from the root key **
+        const { chainKey, messageKey } = await deriveKeysFromRoot(rootKey);
+        setRatchetState({ chainKey, messageKey, messageCount: 0 });
+
         setStatus(`Secure session established with ${peerUser.name}!`);
-
-        console.log("INITIAL ROOT KEY (Shared Secret):", sharedSecret1);
-        console.log("This key should be identical for both you and", peerUser.name);
-
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       } catch (err: any) {
         setStatus(`Error: ${err.message}`);
@@ -58,18 +75,75 @@ export default function ChatWindow({ peerUser, onBack }: ChatWindowProps) {
     initializeSession();
   }, [peerUser]);
 
+  const handleSendMessage = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newMessage.trim() || !ratchetState) return;
+
+    const { messageKey } = ratchetState;
+
+    // 1. Encrypt the message with the current message key
+    const { iv, ciphertext } = await encryptMessage(messageKey, newMessage);
+    console.log(`Message encrypted with key #${ratchetState.messageCount}`);
+
+    // --- Simulation: Immediately decrypt to prove it works ---
+    const decryptedText = await decryptMessage(messageKey, iv, ciphertext);
+    // --- End Simulation ---
+
+    const nextMessage: Message = {
+      id: Date.now(),
+      text: decryptedText,
+      sender: 'me',
+    };
+    setMessages([...messages, nextMessage]);
+    setNewMessage('');
+
+    // 2. **Advance the ratchet**
+    // Derive the NEXT message key from the current chain key
+    const { chainKey: nextChainKey, messageKey: nextMessageKey } = await deriveKeysFromRoot(ratchetState.chainKey);
+    setRatchetState({
+      chainKey: nextChainKey,
+      messageKey: nextMessageKey,
+      messageCount: ratchetState.messageCount + 1,
+    });
+    console.log(`Ratchet advanced. Ready to encrypt message #${ratchetState.messageCount + 1}`);
+  };
+
   return (
-    <div className="w-full max-w-2xl p-4 bg-white rounded-lg shadow-md">
-      <div className="flex items-center justify-between mb-4">
-        <button onClick={onBack} className="text-blue-500 hover:underline">← Back to Users</button>
+    <div className="w-full max-w-2xl p-4 bg-white rounded-lg shadow-md flex flex-col h-[70vh]">
+      <div className="flex items-center justify-between mb-4 border-b pb-2">
+        <button onClick={onBack} className="text-blue-500 hover:underline">← Back</button>
         <h2 className="text-xl font-bold">Chat with {peerUser.name}</h2>
         <div />
       </div>
-      <div className="p-4 bg-gray-100 rounded-lg">
+      <div className="text-center p-2 bg-gray-100 rounded-lg mb-4">
         <p className="text-sm text-gray-600"><strong>Status:</strong> {status}</p>
-        {rootKey && <p className="text-sm text-green-600 font-mono mt-2">RootKey successfully derived.</p>}
       </div>
-      {/* Chat messages and input will go here */}
+      <div className="flex-1 overflow-y-auto bg-gray-50 p-4 rounded-lg mb-4">
+        {messages.map((msg) => (
+          <div key={msg.id} className={`flex ${msg.sender === 'me' ? 'justify-end' : 'justify-start'}`}>
+            <div className={`max-w-xs md:max-w-md p-3 rounded-lg ${msg.sender === 'me' ? 'bg-blue-500 text-white' : 'bg-gray-200'}`}>
+              {msg.text}
+            </div>
+          </div>
+        ))}
+      </div>
+      <form onSubmit={handleSendMessage} className="flex">
+        <input
+          type="text"
+          value={newMessage}
+          onChange={(e) => setNewMessage(e.target.value)}
+          className="flex-1 p-2 border rounded-l-lg"
+          placeholder={ratchetState ? "Type your message..." : "Waiting for secure session..."}
+          disabled={!ratchetState}
+        />
+        <button
+          type="submit"
+          className="bg-blue-500 text-white p-2 rounded-r-lg disabled:bg-gray-400"
+          disabled={!ratchetState || !newMessage.trim()}
+        >
+          Envoyer
+        </button>
+      </form>
     </div>
   );
 }

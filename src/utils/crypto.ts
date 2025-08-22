@@ -54,23 +54,58 @@ export const deriveSharedSecret = async (
   privateKey: CryptoKey,
   publicKey: CryptoKey
 ) => {
-  return crypto.subtle.deriveKey(
+
+  return crypto.subtle.deriveBits(
     {
       name: "ECDH",
-      public: publicKey, // Corrected property name
+      public: publicKey,
     },
     privateKey,
-    {
-      name: "AES-GCM",
-      length: 256,
-    },
-    true,
-    ["encrypt", "decrypt"]
+    256
   );
 };
 
+// KDF function to derive new keys from a root key
+export const deriveKeysFromRoot = async (rootKey: CryptoKey) => {
+  const salt = new Uint8Array(32); // A salt could be pre-agreed or derived
+  const info = new TextEncoder().encode("Scred-v1"); // Application-specific info
+
+  const derivedBits = await crypto.subtle.deriveBits(
+    {
+      name: "HKDF",
+      salt: salt,
+      info: info,
+      hash: "SHA-256",
+    },
+    rootKey,
+    512 // 256 bits for ChainKey + 256 bits for MessageKey
+  );
+
+  const chainKeyData = derivedBits.slice(0, 32);
+  const messageKeyData = derivedBits.slice(32, 64);
+
+  const chainKey = await crypto.subtle.importKey(
+    "raw",
+    chainKeyData,
+    { name: "HKDF" },
+    false,
+    ["deriveKey", "deriveBits"]
+  );
+
+  const messageKey = await crypto.subtle.importKey(
+    "raw",
+    messageKeyData,
+    { name: "AES-GCM" },
+    true,
+    ["encrypt", "decrypt"]
+  );
+
+  return { chainKey, messageKey };
+};
+
+
 export const encryptMessage = async (
-  sharedSecret: CryptoKey,
+  messageKey: CryptoKey,
   message: string
 ) => {
   const iv = crypto.getRandomValues(new Uint8Array(12));
@@ -81,7 +116,7 @@ export const encryptMessage = async (
       name: "AES-GCM",
       iv: iv,
     },
-    sharedSecret,
+    messageKey,
     encodedMessage
   );
 
@@ -92,7 +127,7 @@ export const encryptMessage = async (
 };
 
 export const decryptMessage = async (
-  sharedSecret: CryptoKey,
+  messageKey: CryptoKey,
   iv: string,
   ciphertext: string
 ) => {
@@ -104,7 +139,7 @@ export const decryptMessage = async (
       name: "AES-GCM",
       iv: ivBuffer,
     },
-    sharedSecret,
+    messageKey,
     ciphertextBuffer
   );
 
