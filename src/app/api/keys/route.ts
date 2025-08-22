@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+
 import { getUser } from "@/lib/auth/auth-session";
 import { db } from "@/lib/db";
 
