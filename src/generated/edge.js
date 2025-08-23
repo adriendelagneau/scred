@@ -185,7 +185,7 @@ const config = {
       "value": "prisma-client-js"
     },
     "output": {
-      "value": "/home/b166er/Desktop/Porte-folio/scred/src/generated",
+      "value": "/home/b166er/Desktop/Porte-folio/discret/src/generated",
       "fromEnvVar": null
     },
     "config": {
@@ -199,7 +199,7 @@ const config = {
       }
     ],
     "previewFeatures": [],
-    "sourceFilePath": "/home/b166er/Desktop/Porte-folio/scred/prisma/schema.prisma",
+    "sourceFilePath": "/home/b166er/Desktop/Porte-folio/discret/prisma/schema.prisma",
     "isCustomOutput": true
   },
   "relativeEnvPaths": {
